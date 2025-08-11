@@ -1,0 +1,225 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>キャラクター図鑑メーカー（前端）</title>
+  <link rel="stylesheet" href="styles/styles.css">
+</head>
+<body>
+  <main class="container">
+    <h1 class="title">キャラクター図鑑メーカー</h1>
+
+    <section class="canvas-area">
+      <div class="tools">
+        <label>色:
+          <input id="color" type="color" value="#000000" />
+        </label>
+        <label>太さ:
+          <input id="size" type="range" min="1" max="40" value="4" />
+        </label>
+        <button id="undo">1つ前に戻る</button>
+        <button id="clear">すべて消す</button>
+        <button id="download">保存する</button>
+      </div>
+
+      <div class="canvas-wrap">
+        <canvas id="paint" width="600" height="420" aria-label="お絵かきキャンバス"></canvas>
+      </div>
+    </section>
+
+    <section class="meta-area">
+      <form id="submitForm" method="post" action="/api/upload">
+        <div class="field">
+          <label for="charName">キャラクター名</label>
+          <input id="charName" name="name" type="text" placeholder="例：もふもふネコ" required />
+        </div>
+
+        <div class="field">
+          <label for="prompt">補足メモ（AIに渡すヒント）</label>
+          <input id="prompt" name="hint" type="text" placeholder="性格や特徴（任意）: 例：いたずら好きで好奇心旺盛" />
+        </div>
+
+        <!-- ここに画像データ（dataURL）を入れてバックエンドへ送る -->
+        <input type="hidden" id="imageData" name="imageData" />
+
+        <div class="actions">
+          <button id="previewBtn" type="button">プレビュー</button>
+          <button id="submitBtn" type="submit">バックエンドへ送信</button>
+        </div>
+      </form>
+
+      <div id="preview" class="preview">
+        <p>プレビュー</p>
+        <img id="previewImg" alt="描画プレビュー" />
+        <p id="previewName"></p>
+        <p id="previewHint" class="hint"></p>
+      </div>
+    </section>
+
+    <footer class="footnote">
+      <small>※このサンプルはフロント実装です。サーバー側で POST `/api/upload` を受け取り、`name` と `hint`、`imageData`（dataURL）を処理してください。</small>
+    </footer>
+  </main>
+
+  <script>
+    // 基本要素取得
+    const canvas = document.getElementById('paint');
+    const ctx = canvas.getContext('2d');
+    const colorEl = document.getElementById('color');
+    const sizeEl = document.getElementById('size');
+    const clearBtn = document.getElementById('clear');
+    const downloadBtn = document.getElementById('download');
+    const undoBtn = document.getElementById('undo');
+
+    const previewBtn = document.getElementById('previewBtn');
+    const previewImg = document.getElementById('previewImg');
+    const previewName = document.getElementById('previewName');
+    const previewHint = document.getElementById('previewHint');
+    const imageDataInput = document.getElementById('imageData');
+    const submitForm = document.getElementById('submitForm');
+
+    // 描画ステート
+    let drawing = false;
+    let lastX = 0, lastY = 0;
+    ctx.lineJoin = 'round';
+    ctx.lineCap = 'round';
+    ctx.strokeStyle = colorEl.value;
+    ctx.lineWidth = sizeEl.value;
+
+    // undo 用履歴（最大20）
+    const history = [];
+    function pushHistory() {
+      try {
+        if (history.length >= 20) history.shift();
+        history.push(canvas.toDataURL());
+      } catch (e) { /* 大きすぎると落ちることも */ }
+    }
+
+    // 初期の空白を履歴に保存
+    pushHistory();
+
+    // イベント：描画開始
+    function startDraw(x, y) {
+      drawing = true;
+      lastX = x;
+      lastY = y;
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+    }
+    // 描画中
+    function drawTo(x, y) {
+      if (!drawing) return;
+      ctx.lineTo(x, y);
+      ctx.stroke();
+      lastX = x;
+      lastY = y;
+    }
+    // 描画終了
+    function endDraw() {
+      if (drawing) {
+        drawing = false;
+        ctx.closePath();
+        pushHistory();
+      }
+    }
+
+    // マウス
+    canvas.addEventListener('mousedown', (e) => {
+      const r = canvas.getBoundingClientRect();
+      startDraw(e.clientX - r.left, e.clientY - r.top);
+    });
+    canvas.addEventListener('mousemove', (e) => {
+      const r = canvas.getBoundingClientRect();
+      drawTo(e.clientX - r.left, e.clientY - r.top);
+    });
+    window.addEventListener('mouseup', endDraw);
+
+    // タッチ対応
+    canvas.addEventListener('touchstart', (e) => {
+      e.preventDefault();
+      const t = e.touches[0];
+      const r = canvas.getBoundingClientRect();
+      startDraw(t.clientX - r.left, t.clientY - r.top);
+    }, {passive:false});
+    canvas.addEventListener('touchmove', (e) => {
+      e.preventDefault();
+      const t = e.touches[0];
+      const r = canvas.getBoundingClientRect();
+      drawTo(t.clientX - r.left, t.clientY - r.top);
+    }, {passive:false});
+    window.addEventListener('touchend', endDraw);
+
+    // ツールイベント
+    colorEl.addEventListener('change', () => ctx.strokeStyle = colorEl.value);
+    sizeEl.addEventListener('input', () => ctx.lineWidth = sizeEl.value);
+
+    clearBtn.addEventListener('click', () => {
+      // 空白にする
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      pushHistory();
+    });
+
+    downloadBtn.addEventListener('click', () => {
+      const link = document.createElement('a');
+      link.download = (document.getElementById('charName').value || 'drawing') + '.png';
+      link.href = canvas.toDataURL('image/png');
+      link.click();
+    });
+
+    undoBtn.addEventListener('click', () => {
+      if (history.length > 1) {
+        history.pop(); // 現在の状態を捨てる
+        const prev = history[history.length - 1];
+        const img = new Image();
+        img.onload = function() {
+          ctx.clearRect(0,0,canvas.width,canvas.height);
+          ctx.drawImage(img, 0, 0);
+        }
+        img.src = prev;
+      } else {
+        // 履歴が無ければクリア
+        ctx.clearRect(0,0,canvas.width,canvas.height);
+      }
+    });
+
+    // プレビュー表示（フォーム送信前に画像を hidden input に入れる）
+    previewBtn.addEventListener('click', () => {
+      const data = canvas.toDataURL('image/png');
+      previewImg.src = data;
+      previewName.textContent = document.getElementById('charName').value || '（名前未入力）';
+      previewHint.textContent = document.getElementById('prompt').value || '';
+      // 送信用 hidden にセット（submit 時にも再セット）
+      imageDataInput.value = data;
+    });
+
+    // フォーム送信前処理：canvas→dataURL を hidden にセット
+    submitForm.addEventListener('submit', (e) => {
+      // 最終確認で画像データを入れる
+      imageDataInput.value = canvas.toDataURL('image/png');
+      // ここで追加のバリデーションやローディングUIを入れてもよい
+      // 例: バックエンドに JSON で送りたい場合は fetch を使う実装に変える
+    });
+
+    // 初期の背景（任意）：白背景を入れて透過を避ける
+    function fillWhiteBackground() {
+      const tmp = ctx.getImageData(0,0,canvas.width,canvas.height);
+      // 既に塗られているか確認（透過でないならスキップ）
+      // ここでは常に白背景を敷く
+      ctx.save();
+      ctx.globalCompositeOperation = 'destination-over';
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0,0,canvas.width,canvas.height);
+      ctx.restore();
+      pushHistory();
+    }
+    // 初期化
+    (function init(){
+      // キャンバス解像度をデバイスピクセル比対応にしたい場合はここで調整可能
+      // ここではそのまま固定ピクセルで扱う（簡潔さ優先）
+      // 白背景を敷く
+      fillWhiteBackground();
+    })();
+  </script>
+</body>
+</html>
