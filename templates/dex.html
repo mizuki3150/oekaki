@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="ja">
+
+<head>
+  <meta charset="utf-8">
+  <title>キャラクター図鑑</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+</head>
+
+<body class="bg-gray-100 p-6">
+  <!-- ヘッダー -->
+  <div class="flex items-center justify-between mb-6">
+    <h1 class="text-3xl font-bold">キャラクター図鑑</h1>
+    <button onclick="location.href='/'" class="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-lg">
+      お絵描き画面に戻る
+    </button>
+  </div>
+
+  <!-- 検索欄 -->
+  <div class="mb-6">
+    <input id="search-input" type="text" placeholder="キャラクター名で検索"
+      class="w-full md:w-1/2 p-2 border border-gray-300 rounded-lg shadow-sm">
+  </div>
+
+  <!-- 図鑑リスト -->
+  <div id="dex-container" class="flex flex-col gap-6"></div>
+
+  <script>
+    let allEntries = [];
+    let saveCounter = 1;
+
+    async function loadDex() {
+      const res = await fetch("/api/entries");
+      allEntries = await res.json();
+      renderDex(allEntries);
+    }
+
+    function renderDex(entries) {
+      const container = document.getElementById("dex-container");
+      container.innerHTML = "";
+
+      entries.forEach(e => {
+        const card = document.createElement("div");
+        card.className = "relative w-full bg-white shadow rounded-2xl p-6";
+
+        card.innerHTML = `
+          <div class="flex gap-6 items-start">
+            <!-- 左：画像 -->
+            <div class="flex-shrink-0">
+              <img src="/images/${e.image_path}" class="max-w-md max-h-96 mx-auto mb-4 rounded-xl bg-gray-50 object-contain">
+              <p class="text-lg text-gray-700 mb-1"><strong>作者が送った補足メモ:</strong></p> ${e.hint || "-"}</p>
+            </div>
+
+            <!-- 右：テキスト -->
+            <div class="flex-1">
+              <h2 class="text-2xl font-bold mb-2">${e.name || "？？？"}</h2>
+              <p class="text-lg text-gray-700 mb-1"><strong>種族/職業:</strong></p> ${e.race_job || "-"}</p>
+              <p class="text-lg text-gray-700 mb-1"><strong>見た目:</strong></p> ${e.appearance || "-"}</p>
+              <p class="text-lg text-gray-700 mb-1"><strong>性格:</strong></p> ${e.personality || "-"}</p>
+              <p class="text-lg text-gray-700 mb-1"><strong>能力:</strong></p> ${e.ability || "-"}</p>
+              <p>---</p>
+              <p class="text-lg text-gray-900 border border-blue-400 rounded-lg p-4 bg-blue-50"> ${e.description || ""}</p>
+            </div>
+          </div>
+
+          <!-- 右上の操作ボタン -->
+          <div class="absolute top-3 right-3 flex gap-2">
+            <button class="delete-btn bg-red-500 hover:bg-red-600 text-white px-3 py-1 rounded-lg text-sm">削除</button>
+            <button class="save-btn bg-green-500 hover:bg-green-600 text-white px-3 py-1 rounded-lg text-sm">保存</button>
+          </div>
+        `;
+
+        // 削除処理
+        card.querySelector(".delete-btn").addEventListener("click", async () => {
+          if (confirm(`「${e.name}」を削除しますか？`)) {
+            const res = await fetch(`/api/entries/${e.id}`, { method: "DELETE" });
+            const result = await res.json();
+            if (result.success) card.remove();
+            else alert("削除に失敗しました");
+          }
+        });
+
+        // 保存処理
+        card.querySelector(".save-btn").addEventListener("click", async () => {
+          const canvas = await html2canvas(card, { scale: 2 });
+          const link = document.createElement("a");
+
+          // ← e.id を利用して固定番号にする
+          const filename = `op_${String(e.id).padStart(4, '0')}.png`;
+
+          link.download = filename;
+          link.href = canvas.toDataURL("image/png");
+          link.click();
+        });
+
+
+        container.appendChild(card);
+      });
+    }
+
+    // 検索機能
+    document.getElementById("search-input").addEventListener("input", (e) => {
+      const query = e.target.value.toLowerCase();
+      const filtered = allEntries.filter(entry => entry.name.toLowerCase().includes(query));
+      renderDex(filtered);
+    });
+
+    loadDex();
+  </script>
+</body>
+
+</html>
